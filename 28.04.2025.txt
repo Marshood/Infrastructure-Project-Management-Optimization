@@ -1,0 +1,672 @@
+pip3 install -r requirements.txt
+
+from mip import Model, xsum, minimize, BINARY, INTEGER, OptimizationStatus
+import matplotlib.pyplot as plt
+
+# Weights for the objective function
+W = [0.3, 0.7]  # W[0] for Cmax, W[1] for Penalty
+M = 1000000  # Big-M value
+
+# Quantity of raw materials needed for each project
+# Quantity[k][j], k=0..3 (raw materials), j=0..2 (projects)
+Quantity = [
+    [720, 560, 640],  # K=1
+    [720, 560, 640],  # K=2
+    [720, 560, 640],  # K=3
+    [200, 320, 360]    # K=4
+]
+NUM_raw_mat = len(Quantity)       # 4
+NUM_project = len(Quantity[0])    # 3
+NUM_order = 5                     # 5
+NUM_act = 23                      # 23
+
+# Supplier capacities
+# Capacity[k][s], k=0..3 (raw materials), s=0..3 (suppliers)
+Capacity = [
+    [500, 300, 700, 650],  # K=1
+    [1000, 1200, 0, 0],    # K=2
+    [400, 350, 700, 620],  # K=3
+    [220, 400, 500, 0]     # K=4
+]
+NUM_sup = len(Capacity[0])  # 4
+
+# Target completion dates for each project
+Target = [418, 370, 423]  # Projects 1, 2, 3
+
+# Activity durations for each activity and project
+# Duration[i][j], i=0..22 (activities), j=0..2 (projects)
+Duration = [
+    [18, 13, 15],  # Activity 1
+    [7, 5, 6],     # Activity 2
+    [20, 40, 45],  # Activity 3
+    [5, 3, 4],     # Activity 4
+    [8, 5, 7],     # Activity 5
+    [36, 28, 32],  # Activity 6
+    [18, 14, 16],  # Activity 7
+    [18, 14, 16],  # Activity 8
+    [36, 28, 32],  # Activity 9
+    [18, 14, 16],  # Activity 10
+    [18, 13, 15],  # Activity 11
+    [7, 5, 6],     # Activity 12
+    [20, 40, 45],  # Activity 13
+    [5, 3, 4],     # Activity 14
+    [8, 5, 7],     # Activity 15
+    [36, 28, 32],  # Activity 16
+    [18, 14, 16],  # Activity 17
+    [18, 14, 16],  # Activity 18
+    [36, 28, 32],  # Activity 19
+    [18, 14, 16],  # Activity 20
+    [7, 7, 7],     # Activity 21
+    [3, 3, 3],     # Activity 22
+    [40, 32, 35]   # Activity 23
+]
+
+# Penalties for delays per project
+Penalty = [1500, 3000, 2500]
+
+# Predecessor relationships (a, b): activity a is a predecessor of activity b
+# Activities are numbered from 1 to 23
+Pred = [
+    (1, 2), (1, 3), (1, 4), (2, 4), (3, 4),
+    (1, 5), (2, 5), (3, 5), (4, 5),
+    (1, 6), (2, 6), (3, 6), (4, 6), (5, 6),
+    (1, 7), (2, 7), (3, 7), (4, 7), (5, 7),
+    (1, 8), (2, 8), (3, 8), (4, 8), (5, 8),
+    (1, 9), (2, 9), (3, 9), (4, 9), (5, 9), (6, 9), (7, 9), (8,9),
+    (1, 10), (2, 10), (3, 10), (4, 10), (5, 10), (6, 10), (7, 10), (8, 10),
+    (1, 11), (2, 11), (3, 11), (4, 11), (5, 11), (6, 11), (7, 11), (8, 11), (9, 11), (10, 11),
+    (1, 12), (2, 12), (3, 12), (4, 12), (5, 12), (6, 12), (7, 12), (8, 12), (9, 12), (10, 12),
+    (1, 13), (2, 13), (3, 13), (4, 13), (5, 13), (6, 13), (7, 13), (8, 13), (9, 13), (10, 13),
+    (1, 14), (2, 14), (3, 14), (4, 14), (5, 14), (6, 14), (7, 14), (8, 14), (9, 14), (10, 14),
+    (1, 15), (2, 15), (3, 15), (4, 15), (5, 15), (6, 15), (7, 15), (8, 15), (9, 15), (10, 15),
+    (1, 16), (2, 16), (3, 16), (4, 16), (5, 16), (6, 16), (7, 16), (8, 16), (9, 16), (10, 16),
+    (1, 17), (2, 17), (3, 17), (4, 17), (5, 17), (6, 17), (7, 17), (8, 17), (9, 17), (10, 17),
+    (1, 18), (2, 18), (3, 18), (4, 18), (5, 18), (6, 18), (7, 18), (8, 18), (9, 18), (10, 18),
+    (1, 19), (2, 19), (3, 19), (4, 19), (5, 19), (6, 19), (7, 19), (8, 19), (9, 19), (10, 19),
+    (1, 20), (2, 20), (3, 20), (4, 20), (5, 20), (6, 20), (7, 20), (8, 20), (9, 20), (10, 20),
+    (1, 21), (2, 21), (3, 21), (4, 21), (5, 21), (6, 21), (7, 21), (8, 21), (9, 21), (10, 21),
+    (11, 21), (12, 21), (13, 21), (14, 21), (15, 21), (16, 21), (17, 21), (18, 21), (19, 21), (20, 21),
+    (1, 22), (2, 22), (3, 22), (4, 22), (5, 22), (6, 22), (7, 22), (8, 22), (9, 22), (10, 22),
+    (11, 22), (12, 22), (13, 22), (14, 22), (15, 22), (16, 22), (17, 22), (18, 22), (19, 22), (20, 22),
+    (21, 23), (22, 23)
+]
+# Ensure that the list includes all necessary predecessor pairs up to activity 23.
+
+# Creating the MIP model
+m = Model("model1", solver_name='cbc')
+
+# Defining model variables
+
+# Start Times (ST) and Finish Times (FT) for each activity and project
+ST = [[
+    m.add_var(var_type=INTEGER, name=f'ST_{i+1}_{j+1}', lb=0)
+    for j in range(NUM_project)
+] for i in range(NUM_act)]
+
+FT = [[
+    m.add_var(var_type=INTEGER, name=f'FT_{i+1}_{j+1}', lb=0)
+    for j in range(NUM_project)
+] for i in range(NUM_act)]
+
+# Order Time (OT) variables
+OT = [[[
+    [m.add_var(var_type=INTEGER, name=f'OT_{o+1}_{k+1}_{s+1}_{j+1}', lb=0)
+    for o in range(NUM_order)]
+    for k in range(NUM_raw_mat)]
+    for s in range(NUM_sup) ]
+    for j in range(NUM_project)
+]
+
+# Usage Rate (UR): constant, not variable
+UR = [[2 for _ in range(NUM_raw_mat)] for _ in range(NUM_act)]
+
+# Decision Variables
+
+# x[o][k][s][j]: Quantity ordered for order o, raw mat k, supplier s, project j
+x = [[[
+    [m.add_var(var_type=INTEGER, name=f'x_{o+1}_{k+1}_{s+1}_{j+1}', lb=0)
+     for j in range(NUM_project)]
+    for s in range(NUM_sup)]
+    for k in range(NUM_raw_mat)]
+    for o in range(NUM_order)]
+
+# S[o][k][s][j]: Binary variable indicating if order o, raw mat k, supplier s is used for project j
+S = [[[
+    [m.add_var(var_type=BINARY, name=f'S_{o+1}_{k+1}_{s+1}_{j+1}')
+     for j in range(NUM_project)]
+    for s in range(NUM_sup)]
+    for k in range(NUM_raw_mat)]
+    for o in range(NUM_order)]
+
+# q[k][s][j]: Quantity from raw material k, supplier s for project j
+q = [[[
+    m.add_var(var_type=INTEGER, name=f'q_{k+1}_{s+1}_{j+1}', lb=0)
+    for j in range(NUM_project)
+] for s in range(NUM_sup)] for k in range(NUM_raw_mat)]
+
+# TD[j]: Time delay for project j
+TD = [m.add_var(var_type=INTEGER, name=f'TD_{j+1}', lb=0) for j in range(NUM_project)]
+
+# CT[j]: Completion time for project j
+CT = [m.add_var(var_type=INTEGER, name=f'CT_{j+1}', lb=0) for j in range(NUM_project)]
+
+# Cmax: Maximum completion time across all projects
+Cmax = m.add_var(var_type=INTEGER, name='Cmax', lb=0)
+
+# Objective Function: Minimize weighted sum of Cmax and total penalties
+m.objective = minimize(
+    W[0] * Cmax + W[1] * xsum(Penalty[j] * TD[j] for j in range(NUM_project))
+)
+
+# Constraints
+
+# 2. Constraint for completion time: Cmax >= FT[i][j] for all i, j
+for i in range(NUM_act):
+    for j in range(NUM_project):
+        m += Cmax >= FT[i][j], f"Cmax_constraint_ACT_{i+1}_PROJ_{j+1}"
+
+# 3. Supplier capacity constraints: sum(q[k][s][j] for j) <= Capacity[k][s] for all k, s
+for k in range(NUM_raw_mat):
+    for s in range(NUM_sup):
+        m += xsum(q[k][s][j] for j in range(NUM_project)) <= Capacity[k][s], \
+             f"capacity_constraint_k_{k+1}_s_{s+1}"
+
+# 4. Quantity constraints: sum(x[o][k][s][j] for o) == q[k][s][j] for all k, s, j
+for k in range(NUM_raw_mat):
+    for s in range(NUM_sup):
+        for j in range(NUM_project):
+            m += xsum(x[o][k][s][j] for o in range(NUM_order)) == q[k][s][j], \
+                 f"quantity_constraint_k_{k+1}_s_{s+1}_j_{j+1}"
+
+# 5. Demand constraints: sum(q[k][s][j] for s) >= Quantity[k][j] for all k, j
+for k in range(NUM_raw_mat):
+    for j in range(NUM_project):
+        m += xsum(q[k][s][j] for s in range(NUM_sup)) >= Quantity[k][j], \
+             f"demand_constraint_k_{k+1}_j_{j+1}"
+
+# 6. Big-M Constraints: x[o][k][s][j] <= M * S[o][k][s][j] for all o, k, s, j
+for o in range(NUM_order):
+    for k in range(NUM_raw_mat):
+        for s in range(NUM_sup):
+            for j in range(NUM_project):
+                m += x[o][k][s][j] <= M * S[o][k][s][j], \
+                     f"BigM_x_S_constraint_o_{o+1}_k_{k+1}_s_{s+1}_j_{j+1}"
+
+# 7. Activity duration constraints: FT[i][j] == ST[i][j] + Duration[i][j] for all i, j
+for i in range(NUM_act):
+    for j in range(NUM_project):
+        duration_ij = Duration[i][j]
+        m += FT[i][j] == ST[i][j] + duration_ij, f"FT_constraint_i_{i+1}_j_{j+1}"
+
+# 8. Precedence constraints: For each (a, b) in Pred, ST[b-1][j] >= FT[a-1][j] for all j
+for (a, b) in Pred:
+    a_idx = a - 1  # Convert to 0-based index
+    b_idx = b - 1
+    for j in range(NUM_project):
+        m += ST[b_idx][j] >= FT[a_idx][j], f"precedence_constraint_a_{a}_b_{b}_proj_{j+1}"
+
+# 9. Time delay constraints: TD[j] >= FT[last_activity][j] - Target[j] for all j
+last_activity = NUM_act - 1  # Assuming activity 23 is the last
+for j in range(NUM_project):
+    m += TD[j] >= FT[last_activity][j] - Target[j], f"time_delay_constraint_proj_{j+1}"
+
+# 10. Additional Constraint: ST[i][j] >= sum(OT[o][k][s][j] for o, k, s)
+#for i in range(NUM_act):
+   # for j in range(NUM_project):
+    #     sum_OT = xsum(
+ #OT[o][k][s][j]
+               #* NUM_raw_mat * NUM_sup * NUM_project + k * NUM_sup * NUM_project + s * NUM_project + j]
+  #          for o in range(NUM_order)
+   #         for k in range(NUM_raw_mat)
+    #        for s in range(NUM_sup)
+     #   )
+        #m += ST[i][j] >= sum_OT, f"start_time_constraint_i_{i+1}_j_{j+1}"
+
+# Solving the model
+m.optimize()
+
+# Print results
+print(f"Objective value: {m.objective_value}")
+
+if m.status == OptimizationStatus.OPTIMAL:
+    print("Status: Optimal solution found")
+elif m.status == OptimizationStatus.INFEASIBLE:
+    print("Status: Infeasible")
+elif m.status == OptimizationStatus.UNBOUNDED:
+    print("Status: Unbounded")
+else:
+    print(f"Status: {m.status}")
+
+# Print only non-zero variable values
+for v in m.vars:
+    if v.x is not None and v.x != 0:
+        print(f"{v.name}: {v.x}")
+
+print('Objective:', m.objective)
+
+# Adding Gantt Chart Visualization
+if m.status == OptimizationStatus.OPTIMAL:
+    # Prepare data for the Gantt chart
+    tasks = []
+    start_times = []
+    durations = []
+    projects = []
+
+    for j in range(NUM_project):
+        for i in range(NUM_act):
+            start_time = ST[i][j].x
+            duration = Duration[i][j]
+            tasks.append(f'ACTIVITY {i + 1} (PROJECT {j + 1})')
+            start_times.append(start_time)
+            durations.append(duration)
+            projects.append(j + 1)
+
+    # Sort tasks by start time for better visualization
+    if tasks:
+        sorted_tasks = sorted(zip(tasks, start_times, durations, projects), key=lambda x: x[1])
+        tasks_sorted, start_times_sorted, durations_sorted, projects_sorted = zip(*sorted_tasks)
+    else:
+        tasks_sorted, start_times_sorted, durations_sorted, projects_sorted = [], [], [], []
+
+    # Plotting the Gantt chart
+    plt.figure(figsize=(12, max(6, len(tasks_sorted)*0.3)))
+    for idx, task in enumerate(tasks_sorted):
+        plt.barh(idx, durations_sorted[idx], left=start_times_sorted[idx], height=0.4, align='center', color='skyblue')
+        #  plt.text(start_times_sorted[idx] + durations_sorted[idx]/2, idx, f"{tasks_sorted[idx]}", va='center', ha='center', fontsize=8)
+
+   # Set X-axis ticks (0, 5, 10, 15, ...)
+    max_time = max([start + duration for start, duration in zip(start_times_sorted, durations_sorted)])
+    x_ticks = range(0, int(max_time) + 5, 5)  # Adjust step to 5
+    plt.xticks(x_ticks, [str(tick) for tick in x_ticks])
+
+    plt.xlabel('Time')
+    plt.ylabel('Tasks')
+    plt.title('Gantt Chart')
+    plt.yticks(range(len(tasks_sorted)), tasks_sorted)
+    plt.grid(axis='x', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
+
+
+# Gantt chart visualization with different colors for each activity
+if m.status == OptimizationStatus.OPTIMAL:
+    # Prepare data for the Gantt chart
+    tasks = []
+    start_times = []
+    durations = []
+    projects = []
+    colors = []  # List to store colors for each activity
+
+    # Define a color for each activity
+    activity_colors = ['blue', 'red', 'green', 'orange', 'purple', 'pink', 'brown', 'cyan', 'yellow', 'grey',
+                       'lightblue', 'lightgreen', 'lightcoral', 'gold', 'darkorange', 'darkgreen', 'lightpink',
+                       'lightyellow', 'lime', 'teal', 'lavender', 'indigo', 'slateblue']
+
+    for j in range(NUM_project):
+        for i in range(NUM_act):
+            start_time = ST[i][j].x
+            duration = Duration[i][j]
+            tasks.append(f'ACTIVITY {i + 1} (PROJECT {j + 1})')
+            start_times.append(start_time)
+            durations.append(duration)
+            projects.append(j + 1)
+            colors.append(activity_colors[i % len(activity_colors)])  # Assign color based on activity index
+
+    # Sort tasks by start time for better visualization
+    if tasks:
+        sorted_tasks = sorted(zip(tasks, start_times, durations, projects, colors), key=lambda x: x[1])
+        tasks_sorted, start_times_sorted, durations_sorted, projects_sorted, colors_sorted = zip(*sorted_tasks)
+    else:
+        tasks_sorted, start_times_sorted, durations_sorted, projects_sorted, colors_sorted = [], [], [], [], []
+
+    # Plotting the Gantt chart
+    plt.figure(figsize=(12, max(6, len(tasks_sorted)*0.3)))
+    for idx, task in enumerate(tasks_sorted):
+        plt.barh(idx, durations_sorted[idx], left=start_times_sorted[idx], height=0.4, align='center', color=colors_sorted[idx])
+        # Optionally, add text in the middle of each bar
+        plt.text(start_times_sorted[idx] + durations_sorted[idx] / 2, idx, f"{tasks_sorted[idx]}", va='center', ha='center', fontsize=8)
+
+    # Set X-axis ticks (0, 5, 10, 15, ...)
+    max_time = max([start + duration for start, duration in zip(start_times_sorted, durations_sorted)])
+    x_ticks = range(0, int(max_time) + 5, 5)  # Adjust step to 5
+    plt.xticks(x_ticks, [str(tick) for tick in x_ticks])
+
+    plt.xlabel('Time')
+    plt.ylabel('Tasks')
+    plt.title('Gantt Chart')
+    plt.yticks(range(len(tasks_sorted)), tasks_sorted)
+    plt.grid(axis='x', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime, timedelta
+import random
+
+# יצירת מסגרת נתונים
+data = {
+    "Supplier": [1, 2, 3, 4, 1, 2, 1, 2, 3, 4, 1, 2, 3],
+    "Raw Material": [
+        "Light poles", "Light poles", "Light poles", "Light poles",
+        "Light fixture", "Light fixture",
+        "Arm light fixture", "Arm light fixture", "Arm light fixture", "Arm light fixture",
+        "A2", "A2", "A2"
+    ],
+    "Order Time j=1": [14, 10, 11, 15, 10, 14, 14, 10, 11, 12, 8, 10, 7],
+    "Order Time j=2": [20, 15, 16, 13, 14, 10, 20, 15, 16, 15, 10, 14, 9],
+    "Order Time j=3": [20, 17, 16, 15, 14, 10, 20, 17, 16, 16, 11, 8, 10]
+}
+
+df = pd.DataFrame(data)
+
+# הגדרת תאריך התחלה לכל פרויקט (נניח שהפרויקט מתחיל מהיום)
+start_date = datetime.today()
+
+# יצירת נתוני תרשים גאנט
+gantt_data = []
+colors = ["#FF6347", "#32CD32", "#1E90FF", "#FFD700", "#8A2BE2", "#FF4500", "#2E8B57", "#FF1493", "#00CED1", "#D2691E"]  # צבעים שונים עבור כל חומר גלם
+
+# מיפוי צבעים לכל חומר גלם
+color_map = {material: colors[i % len(colors)] for i, material in enumerate(df['Raw Material'].unique())}
+
+for index, row in df.iterrows():
+    for j in range(1, 4):  # שלושת הפרויקטים
+        task_name = f"{row['Raw Material']} (Supplier {row['Supplier']}) - Project j={j}"
+        duration = row[f"Order Time j={j}"]
+        end_date = start_date + timedelta(days=duration)
+        gantt_data.append((task_name, start_date, end_date, color_map[row['Raw Material']], duration, start_date))  # הוספת תאריך התחלה לתור
+
+        start_date = end_date + timedelta(days=1)  # מרווח יום בין ההזמנות
+
+# מיון לפי תאריך התחלה
+gantt_data.sort(key=lambda x: x[5])  # מיון לפי תאריך התחלה
+
+# יצירת תרשים גאנט
+fig, ax = plt.subplots(figsize=(12, 6))
+
+for i, (task, start, end, color, duration, _) in enumerate(gantt_data):
+    ax.barh(task, duration, left=start, color=color)
+    # הוספת מספר הימים לכל קו
+    ax.text(end - timedelta(days=duration/2), i, f"{duration} days", va='center', ha='center', color="black", fontsize=10)
+
+# הגדרות ציר תאריכים
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+ax.xaxis.set_major_locator(mdates.DayLocator(interval=10))  # הגדלת המרווח בין התאריכים
+plt.xticks(rotation=90)  # שינוי כיוון התוויות לציר X כך שיהיו אנכיות
+plt.xlabel("Date")
+plt.ylabel("Tasks")
+plt.title("Gantt Chart for Order Deliveries (Sorted by Start Date)")
+
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime, timedelta
+import random
+
+# יצירת מסגרת נתונים
+data = {
+    "Supplier": [1, 2, 3, 4, 1, 2, 1, 2, 3, 4, 1, 2, 3],
+    "Raw Material": [
+        "Light poles", "Light poles", "Light poles", "Light poles",
+        "Light fixture", "Light fixture",
+        "Arm light fixture", "Arm light fixture", "Arm light fixture", "Arm light fixture",
+        "A2", "A2", "A2"
+    ],
+    "Order Time j=1": [14, 10, 11, 15, 10, 14, 14, 10, 11, 12, 8, 10, 7],
+    "Order Time j=2": [20, 15, 16, 13, 14, 10, 20, 15, 16, 15, 10, 14, 9],
+    "Order Time j=3": [20, 17, 16, 15, 14, 10, 20, 17, 16, 16, 11, 8, 10]
+}
+
+df = pd.DataFrame(data)
+
+# הגדרת תאריך התחלה לכל פרויקט (נניח שהפרויקט מתחיל מהיום)
+start_date = datetime.today()
+
+# יצירת נתוני תרשים גאנט
+gantt_data = []
+colors = ["#FF6347", "#32CD32", "#1E90FF", "#FFD700", "#8A2BE2", "#FF4500", "#2E8B57", "#FF1493", "#00CED1", "#D2691E"]  # צבעים שונים עבור כל חומר גלם
+
+# מיפוי צבעים לכל חומר גלם
+color_map = {material: colors[i % len(colors)] for i, material in enumerate(df['Raw Material'].unique())}
+
+for index, row in df.iterrows():
+    for j in range(1, 4):  # שלושת הפרויקטים
+        task_name = f"{row['Raw Material']} (Supplier {row['Supplier']}) - Project j={j}"
+        duration = row[f"Order Time j={j}"]
+        end_date = start_date + timedelta(days=duration)
+        gantt_data.append((task_name, start_date, end_date, color_map[row['Raw Material']], j))  # הוספת המידע של הפרויקט
+        start_date = end_date + timedelta(days=1)  # מרווח יום בין ההזמנות
+
+# מיון לפי פרויקט (j=1, j=2, j=3)
+gantt_data.sort(key=lambda x: x[4])  # מיון לפי הפרויקט
+
+# יצירת תרשים גאנט
+fig, ax = plt.subplots(figsize=(12, 6))
+
+for i, (task, start, end, color, _) in enumerate(gantt_data):
+    ax.barh(task, (end - start).days, left=start, color=color)
+
+# הגדרות ציר תאריכים
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+ax.xaxis.set_major_locator(mdates.DayLocator(interval=10))  # הגדלת המרווח בין התאריכים
+plt.xticks(rotation=90)  # שינוי כיוון התוויות לציר X כך שיהיו אנכיות
+plt.xlabel("Date")
+plt.ylabel("Tasks")
+plt.title("Gantt Chart for Order Deliveries (Sorted by Project)")
+
+plt.show()
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime, timedelta
+
+# יצירת מסגרת נתונים
+data = {
+    "Supplier": [1, 2, 3, 4, 1, 2, 1, 2, 3, 4, 1, 2, 3],
+    "Raw Material": [
+        "Light poles", "Light poles", "Light poles", "Light poles",
+        "Light fixture", "Light fixture",
+        "Arm light fixture", "Arm light fixture", "Arm light fixture", "Arm light fixture",
+        "A2", "A2", "A2"
+    ],
+    "Order Time j=1": [14, 10, 11, 15, 10, 14, 14, 10, 11, 12, 8, 10, 7],
+    "Order Time j=2": [20, 15, 16, 13, 14, 10, 20, 15, 16, 15, 10, 14, 9],
+    "Order Time j=3": [20, 17, 16, 15, 14, 10, 20, 17, 16, 16, 11, 8, 10]
+}
+
+df = pd.DataFrame(data)
+
+# הגדרת תאריך התחלה לכל פרויקט (נניח שהפרויקט מתחיל מהיום)
+start_date = datetime.today()
+
+# יצירת נתוני תרשים גאנט
+gantt_data = []
+colors = ["#FF6347", "#32CD32", "#1E90FF", "#FFD700", "#8A2BE2", "#FF4500", "#2E8B57", "#FF1493", "#00CED1", "#D2691E"]
+
+# מיפוי צבעים לכל חומר גלם
+color_map = {material: colors[i % len(colors)] for i, material in enumerate(df['Raw Material'].unique())}
+
+for index, row in df.iterrows():
+    for j in range(1, 4):  # שלושת הפרויקטים
+        task_name = f"{row['Raw Material']} (Supplier {row['Supplier']}) - Project j={j}"
+        duration = row[f"Order Time j={j}"]
+        end_date = start_date + timedelta(days=duration)
+        gantt_data.append((task_name, start_date, end_date, color_map[row['Raw Material']], j, duration))
+        start_date = end_date + timedelta(days=2)  # הגדלת המרווח בין המשימות
+
+# מיון לפי פרויקט (j=1, j=2, j=3)
+gantt_data.sort(key=lambda x: x[4])
+
+# יצירת תרשים גאנט
+fig, ax = plt.subplots(figsize=(12, 8))
+
+for i, (task, start, end, color, _, duration) in enumerate(gantt_data):
+    ax.barh(task, (end - start).days, left=start, color=color, edgecolor="black", alpha=0.7)
+
+    # הוספת טקסט עם מספר הימים
+    mid_date = start + timedelta(days=(end - start).days / 2)
+    ax.text(mid_date, i, f"{duration} days", va='center', ha='center', color="black", fontsize=10, fontweight='bold', bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
+
+# הגדרות ציר תאריכים
+ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+ax.xaxis.set_major_locator(mdates.DayLocator(interval=7))  # הגדלת המרווח בין התאריכים
+plt.xticks(rotation=90)  # הפיכת הכיתוב על ציר ה-X לאנכי
+plt.xlabel("Date")
+plt.ylabel("Tasks")
+plt.title("Gantt Chart for Order Deliveries (Sorted by Project)")
+
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Gantt chart visualization for Project 1 with different colors for each activity
+if m.status == OptimizationStatus.OPTIMAL:
+    # Prepare data for the Gantt chart
+    tasks = []
+    start_times = []
+    durations = []
+    colors = []  # List to store colors for each activity
+
+    # Define a color for each activity
+    activity_colors = ['blue', 'red', 'green', 'orange', 'purple', 'pink', 'brown', 'cyan', 'yellow', 'grey',
+                       'lightblue', 'lightgreen', 'lightcoral', 'gold', 'darkorange', 'darkgreen', 'lightpink',
+                       'lightyellow', 'lime', 'teal', 'lavender', 'indigo', 'slateblue']
+
+    PROJECT_TO_PLOT = 1  # Set project number to filter
+
+    for i in range(NUM_act):
+        start_time = ST[i][PROJECT_TO_PLOT - 1].x
+        duration = Duration[i][PROJECT_TO_PLOT - 1]
+        tasks.append(f'ACTIVITY {i + 1} (PROJECT {PROJECT_TO_PLOT})')
+        start_times.append(start_time)
+        durations.append(duration)
+        colors.append(activity_colors[i % len(activity_colors)])  # Assign color based on activity index
+
+    # Sort tasks by start time for better visualization
+    if tasks:
+        sorted_tasks = sorted(zip(tasks, start_times, durations, colors), key=lambda x: x[1])
+        tasks_sorted, start_times_sorted, durations_sorted, colors_sorted = zip(*sorted_tasks)
+    else:
+        tasks_sorted, start_times_sorted, durations_sorted, colors_sorted = [], [], [], []
+
+    # Plotting the Gantt chart
+    plt.figure(figsize=(12, max(6, len(tasks_sorted) * 0.3)))
+    for idx, task in enumerate(tasks_sorted):
+        plt.barh(idx, durations_sorted[idx], left=start_times_sorted[idx], height=0.4, align='center', color=colors_sorted[idx])
+        # Optionally, add text in the middle of each bar
+        plt.text(start_times_sorted[idx] + durations_sorted[idx] / 2, idx, f"{tasks_sorted[idx]}", va='center', ha='center', fontsize=8)
+
+    # Set X-axis ticks (0, 5, 10, 15, ...)
+    max_time = max([start + duration for start, duration in zip(start_times_sorted, durations_sorted)])
+    x_ticks = range(0, int(max_time) + 5, 5)  # Adjust step to 5
+    plt.xticks(x_ticks, [str(tick) for tick in x_ticks])
+
+    plt.xlabel('Time')
+    plt.ylabel('Tasks')
+    plt.title(f'Gantt Chart for Project {PROJECT_TO_PLOT}')
+    plt.yticks(range(len(tasks_sorted)), tasks_sorted)
+    plt.grid(axis='x', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+
+    print('!!!!!!!!!!!!!!!!!!!!!!!!!!')
+ # חישוב סך כל זמני OT עבור כל פרויקט
+OT_total = []
+for j in range(NUM_project):
+    ot_sum = 0
+    for o in range(NUM_order):
+        for k in range(NUM_raw_mat):
+            for s in range(NUM_sup):
+                index = o * NUM_raw_mat * NUM_sup * NUM_project + k * NUM_sup * NUM_project + s * NUM_project + j
+                ot_val = OT[index].x if OT[index].x is not None else 0
+                ot_sum += ot_val
+    OT_total.append(ot_sum)
+
+# הדפסת סך זמני OT עבור כל פרויקט
+for j, total in enumerate(OT_total):
+    print(f"Project {j+1} - Total OT: {total}")
+
+# גרף המציג את "Ordering Phase" ביחד עם פעילויות הפרויקט
+for j in range(NUM_project):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # הצגת שלב ההזמנה כבלוק אחד
+    ordering_start = 0
+    ordering_end = OT_total[j]
+    ax.barh("Ordering Phase", ordering_end - ordering_start, left=ordering_start, height=0.5,
+            color="lightgrey", edgecolor="black")
+    ax.text(ordering_end / 2, 0, f"OT: {ordering_end}", ha='center', va='center', fontsize=10, color='black')
+
+    # איסוף שמות הפעילויות לתוויות
+    y_labels = []
+    for i in range(NUM_act):
+        st_val = ST[i][j].x if ST[i][j].x is not None else 0
+        ft_val = FT[i][j].x if FT[i][j].x is not None else st_val
+        ax.barh(f"Activity {i+1}", ft_val - st_val, left=st_val, height=0.5, color="skyblue", edgecolor="black")
+        ax.text((st_val + ft_val) / 2, i+1, f"{st_val} - {ft_val}", ha='center', va='center', fontsize=8)
+        y_labels.append(f"Activity {i+1}")
+
+    ax.set_title(f'Project {j+1} Timeline (OT vs ST and FT) !!!!', fontsize=12)
+    # הגדרת ticks כך שהמספר שלהם יתאים למספר התוויות: "Ordering Phase" + פעילויות
+    ax.set_yticks(range(0, NUM_act + 1))
+    ax.set_yticklabels(["Ordering Phase"] + y_labels)
+    ax.set_xlabel("Time")
+    ax.grid(axis='x', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
